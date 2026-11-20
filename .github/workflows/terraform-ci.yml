@@ -97,4 +97,4 @@ jobs:
                     -backend-config="use_cli=true"
 
             - name: Terraform Plan
-              run: terraform plan -input=false -no-color
+              run: terraform plan -input=false
