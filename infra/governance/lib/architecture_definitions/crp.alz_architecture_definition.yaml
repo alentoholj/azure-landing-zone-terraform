@@ -1,0 +1,68 @@
+name: crp
+
+management_groups:
+  - id: crp-root
+    display_name: CRP Root
+    archetypes: []
+    parent_id: null
+    exists: false
+
+  - id: crp-platform
+    display_name: CRP Platform
+    archetypes: []
+    parent_id: crp-root
+    exists: false
+  
+  - id: crp-management
+    display_name: CRP Management
+    archetypes: []
+    parent_id: crp-platform
+    exists: false
+
+  - id: crp-connectivity
+    display_name: CRP Connectivity
+    archetypes: []
+    parent_id: crp-platform
+    exists: false
+
+  - id: crp-identity
+    display_name: CRP Identity
+    archetypes: []
+    parent_id: crp-platform
+    exists: false
+  
+  - id: crp-security
+    display_name: CRP Security
+    archetypes: []
+    parent_id: crp-platform
+    exists: false
+
+  - id: crp-landingzones
+    display_name: CRP Landing Zones
+    archetypes: []
+    parent_id: crp-root
+    exists: false
+
+  - id: crp-corp
+    display_name: CRP Corporate
+    archetypes: []
+    parent_id: crp-landingzones
+    exists: false
+  
+  - id: crp-online
+    display_name: CRP Online
+    archetypes: []
+    parent_id: crp-landingzones
+    exists: false
+
+  - id: crp-sandbox
+    display_name: CRP Sandbox
+    archetypes: []
+    parent_id: crp-root
+    exists: false
+  
+  - id: crp-decommissioned
+    display_name: CRP Decommissioned
+    archetypes: []
+    parent_id: crp-root
+    exists: false
