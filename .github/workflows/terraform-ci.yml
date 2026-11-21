@@ -74,7 +74,6 @@ jobs:
         permissions:
             contents: read
             id-token: write
-            pull-requests: write
 
         defaults:
             run:
@@ -115,7 +114,7 @@ jobs:
               id: plan
               run: |
                   set +e
-                  terraform plan -lock-timeout=5m -detailed-exitcode -out=tfplan
+                  terraform plan -no-color -lock-timeout=5m -detailed-exitcode -out=tfplan > /dev/null
                   exit_code=$?
                   set -e
                   echo "exitcode=${exit_code}" >> "$GITHUB_OUTPUT"
@@ -124,73 +123,49 @@ jobs:
                     exit "${exit_code}"
                   fi
 
-            - name: Render plan
-              run: terraform show -no-color tfplan > plan.txt
-
-            - name: Publish plan to job summary
-              run: |
-                  {
-                    echo "## Terraform Plan: \`${WORKING_DIR}\`"
-                    echo ""
-                    echo '```hcl'
-                    head -c 60000 plan.txt
-                    echo '```'
-                  } >> "$GITHUB_STEP_SUMMARY"
-
-            - name: Comment plan on pull request
-              if: github.event_name == 'pull_request'
-              uses: actions/github-script@v8
+            - name: Publish plan summary
               env:
                   PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
-              with:
-                  script: |
-                      const fs = require('fs');
-                      const marker = '<!-- terraform-plan:infra/governance -->';
-                      const maxLength = 60000;
+              run: |
+                  terraform show -json tfplan > tfplan.json
 
-                      let plan = fs.readFileSync(`${process.env.WORKING_DIR}/plan.txt`, 'utf8');
-                      if (plan.length > maxLength) {
-                        plan = plan.substring(0, maxLength) + '\n\n... plan truncated, see the job summary for the full output ...';
-                      }
+                  jq -r '
+                    def action_label:
+                      if . == ["create"] then "+ create"
+                      elif . == ["delete"] then "- destroy"
+                      elif . == ["update"] then "~ update"
+                      elif . == ["delete","create"] or . == ["create","delete"] then "-/+ replace"
+                      else join(",") end;
+                    .resource_changes[]?
+                    | select(.change.actions != ["no-op"] and .change.actions != ["read"])
+                    | "\(.change.actions | action_label)  \(.address)"
+                  ' tfplan.json > changes.txt
 
-                      const status = process.env.PLAN_EXITCODE === '2' ? 'changes detected' : 'no changes';
-                      const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+                  counts=$(jq -r '
+                    [.resource_changes[]?.change.actions] as $a
+                    | "Plan: \([$a[] | select(any(.[]; . == "create"))] | length) to add, "
+                    + "\([$a[] | select(. == ["update"])] | length) to change, "
+                    + "\([$a[] | select(any(.[]; . == "delete"))] | length) to destroy."
+                  ' tfplan.json)
 
-                      const body = [
-                        marker,
-                        `### Terraform Plan: \`infra/governance\` (${status})`,
-                        '',
-                        '<details><summary>Show plan</summary>',
-                        '',
-                        '```hcl',
-                        plan,
-                        '```',
-                        '',
-                        '</details>',
-                        '',
-                        `Commit: ${context.sha.substring(0, 7)} | [Workflow run](${runUrl})`,
-                      ].join('\n');
+                  rm -f tfplan.json
 
-                      const { data: comments } = await github.rest.issues.listComments({
-                        owner: context.repo.owner,
-                        repo: context.repo.repo,
-                        issue_number: context.issue.number,
-                        per_page: 100,
-                      });
-                      const existing = comments.find(c => c.body && c.body.includes(marker));
+                  if [ "${PLAN_EXITCODE}" = "2" ]; then status="changes detected"; else status="no changes"; fi
 
-                      if (existing) {
-                        await github.rest.issues.updateComment({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          comment_id: existing.id,
-                          body,
-                        });
-                      } else {
-                        await github.rest.issues.createComment({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          issue_number: context.issue.number,
-                          body,
-                        });
-                      }
+                  {
+                    echo "### Terraform Plan: \`${WORKING_DIR}\` (${status})"
+                    echo ""
+                    echo "**${counts}**"
+                    echo ""
+                    if [ -s changes.txt ]; then
+                      echo "<details><summary>Changed resources ($(wc -l < changes.txt | tr -d ' '))</summary>"
+                      echo ""
+                      echo '```diff'
+                      head -c 60000 changes.txt
+                      echo '```'
+                      echo ""
+                      echo "</details>"
+                      echo ""
+                    fi
+                    echo "> Attribute values are hidden because this repository is public. Run \`terraform plan\` locally for full details."
+                  } >> "$GITHUB_STEP_SUMMARY"
