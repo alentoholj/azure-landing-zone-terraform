@@ -125,15 +125,18 @@ jobs:
               elif . == ["delete"] then "- destroy"
               elif . == ["update"] then "~ update"
               elif . == ["delete","create"] or . == ["create","delete"] then "-/+ replace"
+              elif . == ["no-op"] then "= no-op"
               else join(",") end;
             .resource_changes[]?
-            | select(.change.actions != ["no-op"] and .change.actions != ["read"])
-            | "\(.change.actions | action_label)  \(.address)"
+            | select((.change.actions != ["no-op"] and .change.actions != ["read"]) or .change.importing != null)
+            | (if .change.importing != null then "<= import  " else "" end)
+              + "\(.change.actions | action_label)  \(.address)"
           ' tfplan.json > changes.txt
 
           counts=$(jq -r '
             [.resource_changes[]?.change.actions] as $a
-            | "Plan: \([$a[] | select(any(.[]; . == "create"))] | length) to add, "
+            | "Plan: \([.resource_changes[]? | select(.change.importing != null)] | length) to import, "
+            + "\([$a[] | select(any(.[]; . == "create"))] | length) to add, "
             + "\([$a[] | select(. == ["update"])] | length) to change, "
             + "\([$a[] | select(any(.[]; . == "delete"))] | length) to destroy."
           ' tfplan.json)
