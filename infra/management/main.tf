@@ -17,6 +17,8 @@ module "management" {
 
   log_analytics_workspace_daily_quota_gb = 1
 
+  log_analytics_solution_plans = []
+
   data_collection_rules = {
     change_tracking = {
       name = "dcr-crp-change-tracking-weu"
