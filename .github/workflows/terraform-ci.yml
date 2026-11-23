@@ -1,305 +1,49 @@
-name: Terraform Governance CI
+name: Terraform CI
 
 on:
     pull_request:
         branches:
             - main
         paths:
-            - "infra/governance/**"
+            - "infra/**"
             - ".github/workflows/terraform-ci.yml"
+            - ".github/workflows/terraform-stack.yml"
 
     push:
         branches:
             - main
         paths:
-            - "infra/governance/**"
+            - "infra/**"
             - ".github/workflows/terraform-ci.yml"
+            - ".github/workflows/terraform-stack.yml"
 
     workflow_dispatch:
 
 permissions:
     contents: read
 
-# Serialise runs per ref so two plans never fight over the state lock.
+# Serialise runs per ref so two runs never fight over the state locks.
 concurrency:
-    group: terraform-governance-${{ github.ref }}
+    group: terraform-${{ github.ref }}
     cancel-in-progress: false
-
-env:
-    TF_VERSION: "1.12.2"
-    TF_IN_AUTOMATION: "true"
-    TF_INPUT: "false"
-    WORKING_DIR: infra/governance
-
 jobs:
-    terraform-validate:
-        name: Terraform Format & Validate
-        runs-on: ubuntu-latest
-        timeout-minutes: 10
-
-        defaults:
-            run:
-                working-directory: ${{ env.WORKING_DIR }}
-                shell: bash
-
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v5
-
-            - name: Setup Terraform
-              uses: hashicorp/setup-terraform@v4
-              with:
-                  terraform_version: ${{ env.TF_VERSION }}
-
-            - name: Terraform Format
-              run: terraform fmt -check -recursive -diff
-
-            - name: Terraform Init
-              run: terraform init -backend=false -lockfile=readonly
-
-            - name: Terraform Validate
-              run: terraform validate
-
-    terraform-plan:
-        name: Terraform Plan
-        needs: terraform-validate
-        runs-on: ubuntu-latest
-        timeout-minutes: 30
-        environment: crp-caf
-
-        # OIDC tokens are not issued to pull requests from forks.
-        if: >-
-            github.event_name != 'pull_request' ||
-            github.event.pull_request.head.repo.full_name == github.repository
-
+    governance:
+        name: governance
+        uses: ./.github/workflows/terraform-stack.yml
+        with:
+            stack: governance
+        secrets: inherit
         permissions:
             contents: read
             id-token: write
 
-        outputs:
-            exitcode: ${{ steps.plan.outputs.exitcode }}
-
-        defaults:
-            run:
-                working-directory: ${{ env.WORKING_DIR }}
-                shell: bash
-
-        env:
-            ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-            ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-            ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-            ARM_USE_OIDC: "true"
-            ARM_USE_AZUREAD: "true"
-
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v5
-
-            - name: Setup Terraform
-              uses: hashicorp/setup-terraform@v4
-              with:
-                  terraform_version: ${{ env.TF_VERSION }}
-                  terraform_wrapper: false
-
-            - name: Terraform Init
-              env:
-                  TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
-                  TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
-                  TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
-                  TFSTATE_KEY: ${{ vars.TFSTATE_KEY }}
-              run: |
-                  terraform init -lockfile=readonly \
-                    -backend-config="resource_group_name=${TFSTATE_RESOURCE_GROUP}" \
-                    -backend-config="storage_account_name=${TFSTATE_STORAGE_ACCOUNT}" \
-                    -backend-config="container_name=${TFSTATE_CONTAINER}" \
-                    -backend-config="key=${TFSTATE_KEY}" \
-                    -backend-config="use_oidc=true"
-
-            - name: Terraform Plan
-              id: plan
-              run: |
-                  set +e
-                  terraform plan -no-color -lock-timeout=5m -detailed-exitcode -out=tfplan > /dev/null
-                  exit_code=$?
-                  set -e
-                  echo "exitcode=${exit_code}" >> "$GITHUB_OUTPUT"
-                  # 0 = no changes, 2 = changes present, anything else = error
-                  if [ "${exit_code}" -ne 0 ] && [ "${exit_code}" -ne 2 ]; then
-                    exit "${exit_code}"
-                  fi
-
-            # Shown on the run page (also next to "Review deployments"), so the
-            # approver can see what will change. Lists resource addresses,
-            # actions and counts only; attribute values stay hidden because
-            # the repository is public.
-            - name: Publish plan summary
-              env:
-                  PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
-              run: |
-                  terraform show -json tfplan > tfplan.json
-
-                  jq -r '
-                    def action_label:
-                      if . == ["create"] then "+ create"
-                      elif . == ["delete"] then "- destroy"
-                      elif . == ["update"] then "~ update"
-                      elif . == ["delete","create"] or . == ["create","delete"] then "-/+ replace"
-                      else join(",") end;
-                    .resource_changes[]?
-                    | select(.change.actions != ["no-op"] and .change.actions != ["read"])
-                    | "\(.change.actions | action_label)  \(.address)"
-                  ' tfplan.json > changes.txt
-
-                  counts=$(jq -r '
-                    [.resource_changes[]?.change.actions] as $a
-                    | "Plan: \([$a[] | select(any(.[]; . == "create"))] | length) to add, "
-                    + "\([$a[] | select(. == ["update"])] | length) to change, "
-                    + "\([$a[] | select(any(.[]; . == "delete"))] | length) to destroy."
-                  ' tfplan.json)
-
-                  rm -f tfplan.json
-
-                  if [ "${PLAN_EXITCODE}" = "2" ]; then status="changes detected"; else status="no changes"; fi
-
-                  {
-                    echo "### Terraform Plan: \`${WORKING_DIR}\` (${status})"
-                    echo ""
-                    echo "**${counts}**"
-                    echo ""
-                    if [ -s changes.txt ]; then
-                      echo "<details open><summary>Changed resources ($(wc -l < changes.txt | tr -d ' '))</summary>"
-                      echo ""
-                      echo '```diff'
-                      head -c 60000 changes.txt
-                      echo '```'
-                      echo ""
-                      echo "</details>"
-                      echo ""
-                    fi
-                    echo "> Attribute values are hidden because this repository is public. Run \`terraform plan\` locally for full details."
-                  } >> "$GITHUB_STEP_SUMMARY"
-
-                  rm -f changes.txt
-
-            # The repository is public, so anyone signed in to GitHub can download
-            # workflow artifacts. The plan file contains every attribute value,
-            # so it is encrypted before upload and only the apply job can read it.
-            - name: Encrypt plan
-              if: github.event_name != 'pull_request' && steps.plan.outputs.exitcode == '2'
-              env:
-                  TF_PLAN_PASSPHRASE: ${{ secrets.TF_PLAN_PASSPHRASE }}
-              run: |
-                  if [ -z "${TF_PLAN_PASSPHRASE}" ]; then
-                    echo "::error::Secret TF_PLAN_PASSPHRASE is not set."
-                    exit 1
-                  fi
-                  openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt \
-                    -in tfplan -out tfplan.enc -pass env:TF_PLAN_PASSPHRASE
-                  rm -f tfplan
-
-            - name: Upload encrypted plan
-              if: github.event_name != 'pull_request' && steps.plan.outputs.exitcode == '2'
-              uses: actions/upload-artifact@v7
-              with:
-                  name: tfplan-governance
-                  path: ${{ env.WORKING_DIR }}/tfplan.enc
-                  retention-days: 1
-                  if-no-files-found: error
-
-    # Manual approval gate. The crp-caf-approval environment holds no
-    # credentials; its only purpose is the "Required reviewers" protection rule.
-    # Azure access stays in the crp-caf environment, so the OIDC subject is unchanged.
-    terraform-approve:
-        name: Approve Apply
-        needs: terraform-plan
-        runs-on: ubuntu-latest
-        timeout-minutes: 5
-        environment: crp-caf-approval
-
-        if: >-
-            github.event_name != 'pull_request' &&
-            github.ref == 'refs/heads/main' &&
-            needs.terraform-plan.outputs.exitcode == '2'
-
-        steps:
-            - name: Approved
-              run: echo "Apply of ${GITHUB_SHA::7} approved by ${GITHUB_TRIGGERING_ACTOR}."
-
-    terraform-apply:
-        name: Terraform Apply
-        needs: [terraform-plan, terraform-approve]
-        runs-on: ubuntu-latest
-        timeout-minutes: 60
-        environment: crp-caf
-
-        if: >-
-            github.event_name != 'pull_request' &&
-            github.ref == 'refs/heads/main' &&
-            needs.terraform-plan.outputs.exitcode == '2'
-
+    management:
+        name: management
+        needs: governance
+        uses: ./.github/workflows/terraform-stack.yml
+        with:
+            stack: management
+        secrets: inherit
         permissions:
             contents: read
             id-token: write
-
-        defaults:
-            run:
-                working-directory: ${{ env.WORKING_DIR }}
-                shell: bash
-
-        env:
-            ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-            ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-            ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-            ARM_USE_OIDC: "true"
-            ARM_USE_AZUREAD: "true"
-
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v5
-
-            - name: Setup Terraform
-              uses: hashicorp/setup-terraform@v4
-              with:
-                  terraform_version: ${{ env.TF_VERSION }}
-                  terraform_wrapper: false
-
-            - name: Terraform Init
-              env:
-                  TFSTATE_RESOURCE_GROUP: ${{ vars.TFSTATE_RESOURCE_GROUP }}
-                  TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
-                  TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
-                  TFSTATE_KEY: ${{ vars.TFSTATE_KEY }}
-              run: |
-                  terraform init -lockfile=readonly \
-                    -backend-config="resource_group_name=${TFSTATE_RESOURCE_GROUP}" \
-                    -backend-config="storage_account_name=${TFSTATE_STORAGE_ACCOUNT}" \
-                    -backend-config="container_name=${TFSTATE_CONTAINER}" \
-                    -backend-config="key=${TFSTATE_KEY}" \
-                    -backend-config="use_oidc=true"
-
-            - name: Download encrypted plan
-              uses: actions/download-artifact@v8
-              with:
-                  name: tfplan-governance
-                  path: ${{ env.WORKING_DIR }}
-
-            - name: Decrypt plan
-              env:
-                  TF_PLAN_PASSPHRASE: ${{ secrets.TF_PLAN_PASSPHRASE }}
-              run: |
-                  openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 \
-                    -in tfplan.enc -out tfplan -pass env:TF_PLAN_PASSPHRASE
-                  rm -f tfplan.enc
-
-            # Applies exactly the plan created above. If the state changed since
-            # then, Terraform rejects the stale plan instead of applying it.
-            # Resource-level output is discarded because the logs are public;
-            # errors (stderr) and the final summary line are still shown.
-            - name: Terraform Apply
-              run: |
-                  terraform apply -no-color -input=false -lock-timeout=5m tfplan \
-                    | grep -E '^Apply complete!'
-
-            - name: Remove plan file
-              if: always()
-              run: rm -f tfplan tfplan.enc
