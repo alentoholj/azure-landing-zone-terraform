@@ -11,7 +11,7 @@ module "management" {
   log_analytics_workspace_name = "law-crp-management-weu"
 
   automation_account_name                    = "aa-crp-management-weu"
-  linked_automation_account_creation_enabled = false
+  linked_automation_account_creation_enabled = true
 
   log_analytics_workspace_retention_in_days = 30
 
