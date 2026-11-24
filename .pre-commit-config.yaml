@@ -1,0 +1,22 @@
+# Local checks that run on every `git commit`.
+# Setup once per clone:  pre-commit install
+# Run on all files:      pre-commit run --all-files
+#
+# Both hooks use the terraform and terraform-docs binaries installed on your
+# machine. CI pins terraform-docs to the version in terraform-docs.yml.
+repos:
+  - repo: local
+    hooks:
+      - id: terraform-fmt
+        name: terraform fmt
+        entry: terraform fmt -recursive infra
+        language: system
+        pass_filenames: false
+        files: ^infra/.*\.tf$
+
+      - id: terraform-docs
+        name: terraform-docs
+        entry: scripts/terraform-docs.sh
+        language: system
+        pass_filenames: false
+        files: ^(infra/.*\.(tf|hcl)|infra/.*/README\.md|\.terraform-docs\.yml|scripts/terraform-docs\.sh)$
