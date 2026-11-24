@@ -1,0 +1,61 @@
+name: Terraform Docs
+
+# Fails when a stack README is out of date. It never commits: regenerate
+# locally (pre-commit does it on every commit) and push the result.
+on:
+    pull_request:
+        branches:
+            - main
+        paths:
+            - "infra/**"
+            - ".terraform-docs.yml"
+            - "scripts/terraform-docs.sh"
+            - ".github/workflows/terraform-docs.yml"
+
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+env:
+    TERRAFORM_DOCS_VERSION: "v0.25.1"
+
+jobs:
+    terraform-docs:
+        name: README up to date
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+
+        defaults:
+            run:
+                shell: bash
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Install terraform-docs
+              working-directory: ${{ runner.temp }}
+              run: |
+                  base="https://github.com/terraform-docs/terraform-docs/releases/download/${TERRAFORM_DOCS_VERSION}"
+                  archive="terraform-docs-${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz"
+
+                  curl -fsSLO "${base}/${archive}"
+                  curl -fsSLO "${base}/terraform-docs-${TERRAFORM_DOCS_VERSION}.sha256sum"
+                  grep " ${archive}\$" "terraform-docs-${TERRAFORM_DOCS_VERSION}.sha256sum" | sha256sum --check --strict
+
+                  mkdir -p bin
+                  tar -xzf "${archive}" -C bin terraform-docs
+                  echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+
+            - name: Generate docs
+              run: |
+                  terraform-docs --version
+                  scripts/terraform-docs.sh
+
+            - name: Check for changes
+              run: |
+                  if ! git diff --exit-code -- 'infra/**/README.md'; then
+                    echo "::error::Stack README files are out of date. Run 'pre-commit run --all-files' (or scripts/terraform-docs.sh) and commit the result."
+                    exit 1
+                  fi
