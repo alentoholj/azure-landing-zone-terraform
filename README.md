@@ -32,6 +32,27 @@ Push to main:   Format & Validate → Plan → Approve Apply (manual) → Apply
 [`terraform-docs.yml`](.github/workflows/terraform-docs.yml) fails a pull request
 when a stack README is out of date.
 
+## Security
+
+[`security.yml`](.github/workflows/security.yml) runs on every pull request, on
+`main`, and weekly. Results appear under **Security → Code scanning**.
+
+| Tool | Checks | Fails on |
+| --- | --- | --- |
+| [zizmor](https://docs.zizmor.sh) | Workflows and Dependabot config: injection, unpinned actions, permissions, credential persistence | Medium or higher |
+| [TFLint](https://github.com/terraform-linters/tflint) | Terraform lint rules (`recommended` preset) and the azurerm ruleset, configured in [`.tflint.hcl`](.tflint.hcl) | Any issue |
+| [Trivy](https://trivy.dev) | Terraform misconfigurations, including the downloaded AVM modules | HIGH or CRITICAL |
+
+Supply chain hardening:
+
+- Every action is pinned to a full commit SHA; [Dependabot](.github/dependabot.yml)
+  proposes updates weekly, at least 7 days after a release.
+- Tool binaries (terraform-docs, zizmor, TFLint, Trivy) are verified against a
+  SHA-256 pinned in the workflow. Update the version and hash together.
+- `actions/checkout` never persists the GitHub token, and the stack workflow
+  receives no secrets from its caller; the plan passphrase is an environment
+  secret of `crp-caf`.
+
 ## Local development
 
 Requirements: Terraform, [terraform-docs](https://terraform-docs.io) and [pre-commit](https://pre-commit.com).
