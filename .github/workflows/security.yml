@@ -53,7 +53,7 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   persist-credentials: false
 
@@ -75,7 +75,7 @@ jobs:
               run: zizmor --no-exit-codes --format sarif . > zizmor.sarif
 
             - name: Upload results to code scanning
-              uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+              uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
               with:
                   sarif_file: zizmor.sarif
                   category: zizmor
@@ -96,7 +96,7 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   persist-credentials: false
 
@@ -135,7 +135,7 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   persist-credentials: false
 
@@ -169,7 +169,7 @@ jobs:
               run: trivy config --quiet --format sarif --output trivy.sarif infra
 
             - name: Upload results to code scanning
-              uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+              uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
               with:
                   sarif_file: trivy.sarif
                   category: trivy
