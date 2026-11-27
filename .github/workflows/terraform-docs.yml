@@ -19,6 +19,9 @@ permissions:
 
 env:
     TERRAFORM_DOCS_VERSION: "v0.25.1"
+    # SHA-256 of terraform-docs-v0.25.1-linux-amd64.tar.gz. Pinned here, not
+    # read from the release, so a tampered release cannot pass the check.
+    TERRAFORM_DOCS_SHA256: "246f1a3211c9dbbed4c4af82b856dbd40acda78816ac8cdb5203c2869b659c76"
 
 jobs:
     terraform-docs:
@@ -32,7 +35,9 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v5
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+              with:
+                  persist-credentials: false
 
             - name: Install terraform-docs
               working-directory: ${{ runner.temp }}
@@ -41,8 +46,7 @@ jobs:
                   archive="terraform-docs-${TERRAFORM_DOCS_VERSION}-linux-amd64.tar.gz"
 
                   curl -fsSLO "${base}/${archive}"
-                  curl -fsSLO "${base}/terraform-docs-${TERRAFORM_DOCS_VERSION}.sha256sum"
-                  grep " ${archive}\$" "terraform-docs-${TERRAFORM_DOCS_VERSION}.sha256sum" | sha256sum --check --strict
+                  echo "${TERRAFORM_DOCS_SHA256}  ${archive}" | sha256sum --check --strict
 
                   mkdir -p bin
                   tar -xzf "${archive}" -C bin terraform-docs

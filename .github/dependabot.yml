@@ -1,0 +1,37 @@
+# Weekly update PRs for pinned GitHub Actions (SHA + version comment) and
+# Terraform module/provider versions. Not covered: the tool binaries pinned
+# by version and SHA-256 in security.yml and terraform-docs.yml.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # Wait a week after a release before proposing it, so a compromised or
+    # broken release is usually caught and pulled before it reaches this repo.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: terraform
+    directories:
+      - /infra/governance
+      - /infra/management
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      terraform:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore

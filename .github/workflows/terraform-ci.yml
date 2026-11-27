@@ -32,7 +32,6 @@ jobs:
         uses: ./.github/workflows/terraform-stack.yml
         with:
             stack: governance
-        secrets: inherit
         permissions:
             contents: read
             id-token: write
@@ -43,7 +42,6 @@ jobs:
         uses: ./.github/workflows/terraform-stack.yml
         with:
             stack: management
-        secrets: inherit
         permissions:
             contents: read
             id-token: write
